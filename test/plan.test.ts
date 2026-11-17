@@ -70,6 +70,28 @@ test("both installed heals by removing the other entry", () => {
 	assert.deepEqual(steps(planSwitch(state({ local: true, github: true }), "github")), [["remove", ROOT]]);
 });
 
+test("none removes both entries and installs nothing", () => {
+	assert.deepEqual(steps(planSwitch(state({ local: true, github: true }), "none")), [
+		["remove", ROOT],
+		["remove", GIT],
+	]);
+});
+
+test("none removes whichever entry exists", () => {
+	assert.deepEqual(steps(planSwitch(state({ local: true }), "none")), [["remove", ROOT]]);
+	assert.deepEqual(steps(planSwitch(state({ github: true }), "none")), [["remove", GIT]]);
+});
+
+test("none with nothing installed needs no steps", () => {
+	assert.deepEqual(steps(planSwitch(state(), "none")), []);
+});
+
+test("none does not require an origin remote or a pi manifest", () => {
+	assert.deepEqual(steps(planSwitch(state({ gitSource: "", hasManifest: false, local: true }), "none")), [
+		["remove", ROOT],
+	]);
+});
+
 test("refuses github without an origin remote", () => {
 	assert.match(error(planSwitch(state({ gitSource: "" }), "github")), /no git remote origin/);
 });

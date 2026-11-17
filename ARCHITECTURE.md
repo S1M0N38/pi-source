@@ -22,9 +22,11 @@ flowchart LR
     L -->|"/source github"| G
     G -->|"/source local"| L
     L -.->|"both installed<br/>loads twice"| G
+    L -->|"/source none"| N["no entry"]
+    G -->|"/source none"| N
 ```
 
-Pi loads the extension once per identity, so both together register `/source` twice and every tool twice. Every switch therefore ends with exactly one entry.
+Pi loads the extension once per identity, so both together register `/source` twice and every tool twice. Every switch therefore ends with exactly one entry — or, for `none`, with none at all.
 
 ## Plan, then execute
 
@@ -34,6 +36,8 @@ Two consequences worth keeping:
 
 - **The dry run cannot drift.** It prints the same array the executor consumes; a hand-rolled preview that re-derived the commands would eventually lie.
 - **The ordering invariant is testable.** Install precedes remove, and reversing it would leave nothing installed when the install fails. `test/plan.test.ts` asserts the order on a literal `State`, no fixtures, no harness.
+
+`none` is the degenerate member of the same vocabulary: it has no install step, so its plan is whichever removes apply, and it skips the `hasManifest` and origin refusals — those guard *installing* something pi cannot load, not removing something it can.
 
 `State` carries both what is true (`repoRoot`, `gitSource`, `local`, `github`) and what was found in settings (`localEntry`, `githubEntry`) so that reporting never re-reads the file.
 
@@ -55,7 +59,7 @@ A git entry matches its bare source and any ref suffix: `git:github.com/S1M0N38/
 | `git rev-list --count @{upstream}..HEAD` | only with an upstream | skipped |
 | `git status --porcelain` | every invocation | note omitted |
 | `pi install <source>` | when the requested mode is not installed | message, remaining steps skipped |
-| `pi remove <source>` | when the other mode is installed | message naming the drift |
+| `pi remove <source>` | when the other mode is installed, or either mode for `none` | message naming the drift |
 
 Five read-only git calls before anything is written; a `/source` report is four to five subprocesses and touches no state.
 

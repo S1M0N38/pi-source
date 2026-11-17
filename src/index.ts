@@ -1,10 +1,11 @@
 /**
  * `/source` — show or switch where the checkout in this session is installed
- * from: the local working copy, or the published git clone.
+ * from: the local working copy, the published git clone, or neither.
  *
  *   /source                    report the current state
  *   /source local              install this checkout's path, remove the git entry
  *   /source github             install git:<origin>, remove the local entry
+ *   /source none               remove both entries
  *   /source <mode> --dry-run   print the commands instead of running them
  *
  * Both values come from the checkout, never from configuration: the local path
@@ -17,19 +18,24 @@ import type { Exec, ExecOptions, ExecOutput } from "./git.ts";
 import { type Mode, type State, describe, planSwitch, renderPlan } from "./plan.ts";
 import { resolveState } from "./state.ts";
 
-const USAGE = "usage: /source [local|github] [--dry-run]";
-const VALUES = ["local", "github", "--dry-run"];
+const USAGE = "usage: /source [local|github|none] [--dry-run]";
+const MODES: readonly Mode[] = ["local", "github", "none"];
+const VALUES = [...MODES, "--dry-run"];
 
 interface Parsed {
 	mode?: Mode;
 	dryRun: boolean;
 }
 
+function isMode(token: string): token is Mode {
+	return (MODES as readonly string[]).includes(token);
+}
+
 function parse(args: string): Parsed | { error: string } {
 	const tokens = args.trim().split(/\s+/).filter(Boolean);
 	if (tokens.some((token) => !VALUES.includes(token))) return { error: USAGE };
 
-	const modes = tokens.filter((token): token is Mode => token === "local" || token === "github");
+	const modes = tokens.filter(isMode);
 	if (modes.length > 1) return { error: USAGE };
 
 	const dryRun = tokens.includes("--dry-run");
@@ -43,6 +49,11 @@ function firstLine(text: string): string {
 	return text.split("\n").find((line) => line.trim()) ?? "(no output)";
 }
 
+/** What the report calls a finished plan; `none` uninstalls rather than switches. */
+function outcome(mode: Mode): string {
+	return mode === "none" ? "uninstalled" : `switched to ${mode}`;
+}
+
 /**
  * Completes both the mode and the flag. Modes are mutually exclusive, so once
  * one is on the line the other is no longer offered.
@@ -52,10 +63,10 @@ function completions(prefix: string): AutocompleteItem[] | null {
 	const tokens = prefix.trim().split(/\s+/).filter(Boolean);
 	const partial = trailing ? "" : (tokens[tokens.length - 1] ?? "");
 	const used = trailing ? tokens : tokens.slice(0, -1);
-	const modeUsed = used.some((token) => token === "local" || token === "github");
+	const modeUsed = used.some(isMode);
 
 	const items = VALUES.filter((value) => !used.includes(value))
-		.filter((value) => !(modeUsed && (value === "local" || value === "github")))
+		.filter((value) => !(modeUsed && isMode(value)))
 		.filter((value) => value.startsWith(partial))
 		.map((value) => ({
 			value: [...used, value].join(" "),
@@ -77,11 +88,13 @@ async function switchTo(
 		return;
 	}
 	if (plan.length === 0) {
-		ctx.ui.notify(`already installed from ${mode}`, "info");
+		ctx.ui.notify(mode === "none" ? "not installed" : `already installed from ${mode}`, "info");
 		return;
 	}
 
-	const suffix = state.note ? ` · ${state.note}` : "";
+	// The note is what a `github` install would not contain, so it says nothing
+	// about uninstalling: the work stays on disk either way.
+	const suffix = mode === "none" || !state.note ? "" : ` · ${state.note}`;
 	if (dryRun) {
 		ctx.ui.notify(`dry run: ${renderPlan(plan)}${suffix}`, "info");
 		return;
@@ -95,7 +108,7 @@ async function switchTo(
 		}
 	}
 
-	ctx.ui.notify(`switched to ${mode} — reloading${suffix}`, "info");
+	ctx.ui.notify(`${outcome(mode)} — reloading${suffix}`, "info");
 	await ctx.reload();
 }
 
@@ -104,7 +117,7 @@ export default function sourceCommand(pi: ExtensionAPI): void {
 		pi.exec(command, args, options);
 
 	pi.registerCommand("source", {
-		description: "Show or switch where this checkout is installed from (local or github)",
+		description: "Show or switch where this checkout is installed from (local, github or none)",
 		getArgumentCompletions: completions,
 		handler: async (args, ctx) => {
 			const parsed = parse(args);

@@ -15,6 +15,7 @@ Then:
 ```
 /source local     # install this checkout, remove the git entry, reload
 /source github    # back to the published clone
+/source none      # remove both entries, reload — /source is gone from the session
 /source           # report what is installed now
 ```
 
@@ -42,7 +43,7 @@ npm test            # node --test, no fixtures
 
 ## Tests
 
-Ten assertions over the pure functions, and nothing else: `remotePath` across the remote URL forms, and `planSwitch` for every installed/requested combination plus both refusals. No git, no pi, no temporary directories.
+Fourteen assertions over the pure functions, and nothing else: `remotePath` across the remote URL forms, and `planSwitch` for every installed/requested combination — including `none`, which skips the two refusals — plus both refusals. No git, no pi, no temporary directories.
 
 Behaviour that needs a real repository — resolving a stored local entry, the ahead/dirty note — is verified by hand, outside the suite. Keep it that way: a harness that stands up git and settings fixtures would be larger than the extension.
 

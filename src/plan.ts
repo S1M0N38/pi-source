@@ -6,7 +6,8 @@
 
 import { basename } from "node:path";
 
-export type Mode = "local" | "github";
+/** The identity to end up with. `none` ends with no entry at all. */
+export type Mode = "local" | "github" | "none";
 
 export interface State {
 	/** Top of the checkout, taken from `git rev-parse --show-toplevel`. */
@@ -37,14 +38,36 @@ function piBinary(): string {
 	return basename(process.execPath) === "pi" ? process.execPath : "pi";
 }
 
+function installStep(target: string): Step {
+	return { command: piBinary(), args: ["install", target], timeout: INSTALL_TIMEOUT_MS };
+}
+
+function removeStep(target: string): Step {
+	return { command: piBinary(), args: ["remove", target], timeout: REMOVE_TIMEOUT_MS };
+}
+
 /**
- * Install before removing, always: reversing the order leaves nothing installed
- * when the install fails, and pi keys a git package by URL and a local package
- * by resolved path, so the two entries are otherwise indistinguishable to it.
+ * For the switching modes, install before removing: reversing the order leaves
+ * nothing installed when the install fails, and pi keys a git package by URL and
+ * a local package by resolved path, so the two entries are otherwise
+ * indistinguishable to it.
  *
- * Returns the empty array when the requested mode is already the only one.
+ * `none` has no install step, so its plan is removes only, and it is not gated
+ * on `hasManifest` or on an origin remote: neither is needed to uninstall, and a
+ * checkout whose `pi` key was deleted is exactly the one that still needs
+ * removing.
+ *
+ * Returns the empty array when the requested mode is already the only one — or,
+ * for `none`, when nothing is installed.
  */
 export function planSwitch(state: State, mode: Mode): Step[] | { error: string } {
+	if (mode === "none") {
+		const steps: Step[] = [];
+		if (state.local) steps.push(removeStep(state.repoRoot));
+		if (state.github) steps.push(removeStep(state.gitSource));
+		return steps;
+	}
+
 	const repo = basename(state.repoRoot);
 
 	if (!state.hasManifest) {
@@ -54,14 +77,12 @@ export function planSwitch(state: State, mode: Mode): Step[] | { error: string }
 		return { error: "no git remote origin — cannot install from github" };
 	}
 
+	const steps: Step[] = [];
 	const installed = mode === "github" ? state.github : state.local;
 	const other = mode === "github" ? state.local : state.github;
-	const target = mode === "github" ? state.gitSource : state.repoRoot;
-	const otherTarget = mode === "github" ? state.repoRoot : state.gitSource;
 
-	const steps: Step[] = [];
-	if (!installed) steps.push({ command: piBinary(), args: ["install", target], timeout: INSTALL_TIMEOUT_MS });
-	if (other) steps.push({ command: piBinary(), args: ["remove", otherTarget], timeout: REMOVE_TIMEOUT_MS });
+	if (!installed) steps.push(installStep(mode === "github" ? state.gitSource : state.repoRoot));
+	if (other) steps.push(removeStep(mode === "github" ? state.repoRoot : state.gitSource));
 	return steps;
 }
 
